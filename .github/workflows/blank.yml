@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch: # Allow manual triggering for testing
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,89 +20,144 @@ jobs:
           fetch-depth: 0
       
       - name: Set up output folder
-        run: mkdir -p $GITHUB_WORKSPACE/output
+        run: |
+          mkdir -p output
+          echo "Created output directory:"
+          ls -la
       
       - name: Find last release tag
         id: lasttag
         run: |
           tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          echo "Using last tag: $tag"
+          echo "Using last tag: '$tag'"
           echo "last_tag=$tag" >> $GITHUB_OUTPUT
-          echo "last_tag=$tag" >> $GITHUB_ENV
       
       - name: Detect changed ports
         id: detect
         run: |
-          mkdir -p $GITHUB_WORKSPACE/output
-          
-          # Use the tag from previous step
           last_tag="${{ steps.lasttag.outputs.last_tag }}"
           
+          echo "=== Debug Info ==="
+          echo "Last tag: '$last_tag'"
+          echo "Repository structure:"
+          find . -name "ports" -type d
+          find . -path "*/ports/*" -type d | head -10
+          
           if [ -z "$last_tag" ]; then
-            # First run: include all ports
             echo "No previous tag found, including all ports"
-            ports=$(find ports -maxdepth 1 -type d -not -path ports | sed 's|^|ports/|' | head -20 || echo "")
+            # Find all port directories
+            if [ -d "ports" ]; then
+              ports=$(find ports -mindepth 1 -maxdepth 1 -type d)
+            else
+              echo "No ports directory found!"
+              ports=""
+            fi
           else
             echo "Checking changes since $last_tag"
-            ports=$(git diff --name-only "$last_tag" HEAD | cut -d/ -f1-2 | sort -u | grep '^ports/' || echo "")
+            changed_files=$(git diff --name-only "$last_tag" HEAD)
+            echo "Changed files: $changed_files"
+            ports=$(echo "$changed_files" | grep '^ports/' | cut -d/ -f1-2 | sort -u || echo "")
           fi
           
-          echo "Detected ports: $ports"
+          echo "Raw ports detected: '$ports'"
           
-          # Convert to space-separated list and save
-          ports_list=""
+          # Filter to only existing directories
+          valid_ports=""
           for port in $ports; do
             if [ -d "$port" ]; then
-              ports_list="$ports_list $port"
+              echo "Valid port found: $port"
+              valid_ports="$valid_ports $port"
+            else
+              echo "Skipping non-directory: $port"
             fi
           done
           
-          echo "Final ports list: $ports_list"
-          echo "ports_list=$ports_list" >> $GITHUB_OUTPUT
-          echo "ports_list=$ports_list" >> $GITHUB_ENV
+          valid_ports=$(echo "$valid_ports" | xargs) # trim whitespace
+          echo "Final valid ports: '$valid_ports'"
+          echo "ports_list=$valid_ports" >> $GITHUB_OUTPUT
       
-      - name: Debug step
+      - name: Create test port if no ports exist
         run: |
-          echo "Environment check:"
-          echo "ports_list: '${{ steps.detect.outputs.ports_list }}'"
-          echo "env.ports_list: '${{ env.ports_list }}'"
-          ls -la ports/ || echo "No ports directory"
+          if [ ! -d "ports" ]; then
+            echo "Creating test ports directory structure"
+            mkdir -p ports/example-port
+            echo "# Example Port" > ports/example-port/README.md
+            echo "test content" > ports/example-port/test.txt
+            echo "Created test port structure"
+            ls -la ports/
+          fi
       
       - name: Zip changed ports contents
-        if: steps.detect.outputs.ports_list != ''
+        id: zip
         run: |
           ports_list="${{ steps.detect.outputs.ports_list }}"
+          
+          # If no ports detected, use all ports (for testing)
+          if [ -z "$ports_list" ] && [ -d "ports" ]; then
+            echo "No specific ports detected, using all ports"
+            ports_list=$(find ports -mindepth 1 -maxdepth 1 -type d)
+          fi
+          
+          echo "Processing ports: '$ports_list'"
+          
           if [ -z "$ports_list" ]; then
             echo "No ports to process"
+            echo "has_files=false" >> $GITHUB_OUTPUT
             exit 0
           fi
           
-          for p in $ports_list; do
-            if [ -d "$p" ]; then
-              name=$(basename "$p")
-              echo "Zipping contents of $p -> $name.zip"
-              cd "$p"
-              zip -r "$GITHUB_WORKSPACE/output/${name}.zip" ./*
+          file_count=0
+          for port_path in $ports_list; do
+            if [ -d "$port_path" ]; then
+              port_name=$(basename "$port_path")
+              echo "Processing port: $port_path -> $port_name.zip"
+              
+              cd "$port_path"
+              if [ "$(find . -type f | wc -l)" -gt 0 ]; then
+                zip -r "../../output/${port_name}.zip" .
+                if [ -f "../../output/${port_name}.zip" ]; then
+                  echo "✅ Successfully created ${port_name}.zip"
+                  file_count=$((file_count + 1))
+                else
+                  echo "❌ Failed to create ${port_name}.zip"
+                fi
+              else
+                echo "⚠️  Port $port_path is empty, skipping"
+              fi
               cd - >/dev/null
-            else
-              echo "Directory $p does not exist, skipping"
             fi
           done
           
-          echo "Created zip files:"
-          ls -la $GITHUB_WORKSPACE/output/ || echo "No output files"
+          echo "=== Final Output Check ==="
+          echo "Files created: $file_count"
+          ls -la output/ || echo "No output directory"
+          echo "has_files=$([ $file_count -gt 0 ] && echo 'true' || echo 'false')" >> $GITHUB_OUTPUT
       
       - name: Create or update release
-        if: steps.detect.outputs.ports_list != ''
+        if: steps.zip.outputs.has_files == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: "Latest Ports"
           body: |
-            Automated release of changed ports.
+            Automated release of ports.
             
-            Changed ports: ${{ steps.detect.outputs.ports_list }}
-          files: $GITHUB_WORKSPACE/output/*.zip
+            Processed ports: ${{ steps.detect.outputs.ports_list }}
+            
+            Generated on: $(date)
+          files: output/*.zip
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Debug final state
+        if: always()
+        run: |
+          echo "=== Final Debug ==="
+          echo "Output directory contents:"
+          ls -la output/ || echo "No output directory"
+          echo "Working directory:"
+          pwd
+          ls -la
+          echo "Ports list: '${{ steps.detect.outputs.ports_list }}'"
+          echo "Has files: '${{ steps.zip.outputs.has_files }}'"
