@@ -1,0 +1,38 @@
+name: Zip Port
+
+on:
+  workflow_dispatch:
+    inputs:
+      portname:
+        description: "Which port folder to zip (example: gamename)"
+        required: true
+      version:
+        description: "Release version (example: v1.0.0)"
+        required: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set variables
+        run: |
+          echo "PORTNAME=${{ github.event.inputs.portname }}" >> $GITHUB_ENV
+          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+
+      - name: Create zip
+        run: |
+          mkdir -p output
+          cd ports
+          zip -r "../output/${PORTNAME}.zip" "${PORTNAME}"
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.VERSION }}
+          name: ${{ env.PORTNAME }} ${{ env.VERSION }}
+          files: output/${{ env.PORTNAME }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
