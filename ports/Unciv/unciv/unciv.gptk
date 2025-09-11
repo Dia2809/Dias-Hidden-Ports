@@ -14,7 +14,6 @@ deadzone_delay = 16
 overlay = clear
 mouse_wheel_amount = 3
 start = esc
-select =  hold_state hotkey 
 a = mouse_left
 b = mouse_left
 x = mouse_left
@@ -31,10 +30,7 @@ right_analog = arrow_keys
 left_analog = mouse_movement
 dpad = arrow_keys
 
-[controls:hotkey]
-a = enter
-b = enter
-x = enter
-y = enter
+[controls:analog_0]
+overlay = controls
 
-dpad = tab
+dpad = mouse_movement 
