@@ -1,5 +1,12 @@
 name: Build Ports Release
 
+permissions:
+  contents: write
+  packages: write
+  issues: write
+  pull-requests: write
+  actions: write
+
 on:
   push:
     branches:
