@@ -26,13 +26,4 @@ r2 = mouse_left
 right_analog = arrow_keys
 
 left_analog = mouse_movement
-<<<<<<< HEAD
-dpad = arrow_keys
-
-[controls:analog_0]
-overlay = controls
-
-dpad = mouse_movement 
-=======
 dpad = mouse_movement
->>>>>>> 4ba83e4 (Updating gptk for stickless devices)
