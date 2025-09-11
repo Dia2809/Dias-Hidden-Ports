@@ -1,76 +1,106 @@
 name: Build Ports Release
-
 permissions:
   contents: write
   packages: write
   issues: write
   pull-requests: write
   actions: write
-
 on:
   push:
     branches:
       - main
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
+      
       - name: Set up output folder
         run: mkdir -p $GITHUB_WORKSPACE/output
-
+      
       - name: Find last release tag
         id: lasttag
         run: |
           tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           echo "Using last tag: $tag"
+          echo "last_tag=$tag" >> $GITHUB_OUTPUT
           echo "last_tag=$tag" >> $GITHUB_ENV
-
+      
       - name: Detect changed ports
         id: detect
         run: |
-          if [ -z "$GITHUB_ENV" ]; then
-            echo "No env available"
-          fi
-
           mkdir -p $GITHUB_WORKSPACE/output
           
           # Use the tag from previous step
-          last_tag="${last_tag:-}"
+          last_tag="${{ steps.lasttag.outputs.last_tag }}"
           
           if [ -z "$last_tag" ]; then
             # First run: include all ports
-            ports=$(ls -d ports/*/)
+            echo "No previous tag found, including all ports"
+            ports=$(find ports -maxdepth 1 -type d -not -path ports | sed 's|^|ports/|' | head -20 || echo "")
           else
-            ports=$(git diff --name-only "$last_tag" HEAD | cut -d/ -f1-2 | sort -u | grep '^ports/' || true)
+            echo "Checking changes since $last_tag"
+            ports=$(git diff --name-only "$last_tag" HEAD | cut -d/ -f1-2 | sort -u | grep '^ports/' || echo "")
           fi
-
-          echo "Changed ports: $ports"
-          echo "ports_list=$ports" >> $GITHUB_ENV
-
-      - name: Zip changed ports contents
-        if: env.ports_list != ''
-        run: |
-          for p in $ports_list; do
-            name=$(basename "$p")
-            echo "Zipping contents of $p -> $name.zip"
-            cd "$p"
-            zip -r "$GITHUB_WORKSPACE/output/${name}.zip" ./*
-            cd - >/dev/null
+          
+          echo "Detected ports: $ports"
+          
+          # Convert to space-separated list and save
+          ports_list=""
+          for port in $ports; do
+            if [ -d "$port" ]; then
+              ports_list="$ports_list $port"
+            fi
           done
-
+          
+          echo "Final ports list: $ports_list"
+          echo "ports_list=$ports_list" >> $GITHUB_OUTPUT
+          echo "ports_list=$ports_list" >> $GITHUB_ENV
+      
+      - name: Debug step
+        run: |
+          echo "Environment check:"
+          echo "ports_list: '${{ steps.detect.outputs.ports_list }}'"
+          echo "env.ports_list: '${{ env.ports_list }}'"
+          ls -la ports/ || echo "No ports directory"
+      
+      - name: Zip changed ports contents
+        if: steps.detect.outputs.ports_list != ''
+        run: |
+          ports_list="${{ steps.detect.outputs.ports_list }}"
+          if [ -z "$ports_list" ]; then
+            echo "No ports to process"
+            exit 0
+          fi
+          
+          for p in $ports_list; do
+            if [ -d "$p" ]; then
+              name=$(basename "$p")
+              echo "Zipping contents of $p -> $name.zip"
+              cd "$p"
+              zip -r "$GITHUB_WORKSPACE/output/${name}.zip" ./*
+              cd - >/dev/null
+            else
+              echo "Directory $p does not exist, skipping"
+            fi
+          done
+          
+          echo "Created zip files:"
+          ls -la $GITHUB_WORKSPACE/output/ || echo "No output files"
+      
       - name: Create or update release
-        if: env.ports_list != ''
+        if: steps.detect.outputs.ports_list != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: "Latest Ports"
+          body: |
+            Automated release of changed ports.
+            
+            Changed ports: ${{ steps.detect.outputs.ports_list }}
           files: $GITHUB_WORKSPACE/output/*.zip
           make_latest: true
         env:
