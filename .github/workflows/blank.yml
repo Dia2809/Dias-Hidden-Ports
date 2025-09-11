@@ -48,7 +48,8 @@ jobs:
             name=$(basename "$p")
             echo "Zipping contents of $p -> $name.zip"
             cd "$p"
-            zip -r "../../output/${name}.zip" ./*
+            mkdir -p $GITHUB_WORKSPACE/output
+            zip -r "$GITHUB_WORKSPACE/output/${name}.zip" ./*
             cd - >/dev/null
           done
 
