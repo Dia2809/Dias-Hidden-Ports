@@ -40,15 +40,16 @@ jobs:
           fi
 
           echo "Changed ports: $ports"
-          echo "ports_list=$ports" >> $GITHUB_ENV
-
+            echo "ports_list=$ports" >> $GITHUB_ENV
       - name: Zip changed ports
         if: env.ports_list != ''
         run: |
           for p in $ports_list; do
             name=$(basename "$p")
-            echo "Zipping $p -> $name.zip"
-            zip -r "output/${name}.zip" "$p"
+            echo "Zipping contents of $p -> $name.zip"
+            cd "$p"
+            zip -r "../../output/${name}.zip" ./*
+            cd - >/dev/null
           done
 
       - name: Create/Update Release
