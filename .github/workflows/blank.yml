@@ -1,38 +1,56 @@
-name: Zip Port
+name: Build Ports Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      portname:
-        description: "Which port folder to zip (example: gamename)"
-        required: true
-      version:
-        description: "Release version (example: v1.0.0)"
-        required: true
+  push:
+    branches:
+      - main   # or your default branch
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needed so git history is available
 
-      - name: Set variables
+      - name: Find last release tag
+        id: lasttag
         run: |
-          echo "PORTNAME=${{ github.event.inputs.portname }}" >> $GITHUB_ENV
-          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          echo "last_tag=$tag" >> $GITHUB_ENV
 
-      - name: Create zip
+      - name: Detect changed ports
+        id: detect
         run: |
           mkdir -p output
-          cd ports
-          zip -r "../output/${PORTNAME}.zip" "${PORTNAME}"
+          if [ -z "$last_tag" ]; then
+            # First run: take all ports
+            ports=$(ls -d ports/*/)
+          else
+            ports=$(git diff --name-only $last_tag HEAD | cut -d/ -f1-2 | sort -u | grep '^ports/')
+          fi
 
-      - name: Upload release asset
+          echo "Changed ports: $ports"
+          echo "ports_list=$ports" >> $GITHUB_ENV
+
+      - name: Zip changed ports
+        if: env.ports_list != ''
+        run: |
+          for p in $ports_list; do
+            name=$(basename "$p")
+            echo "Zipping $p -> $name.zip"
+            zip -r "output/${name}.zip" "$p"
+          done
+
+      - name: Create/Update Release
+        if: env.ports_list != ''
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ env.VERSION }}
-          name: ${{ env.PORTNAME }} ${{ env.VERSION }}
-          files: output/${{ env.PORTNAME }}.zip
+          tag_name: latest
+          name: "Latest Ports"
+          files: output/*.zip
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
