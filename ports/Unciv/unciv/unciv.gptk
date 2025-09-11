@@ -19,18 +19,20 @@ b = mouse_left
 x = mouse_left
 y = mouse_left
 
-l1 = mouse_wheel_down repeat
+l1 = mouse_wheel_up repeat
 l2 = mouse_right
-l3 = ctrl
-r1 = mouse_wheel_up repeat
+r1 = mouse_wheel_down repeat
 r2 = mouse_left
-r3 = shift
 right_analog = arrow_keys
 
 left_analog = mouse_movement
+<<<<<<< HEAD
 dpad = arrow_keys
 
 [controls:analog_0]
 overlay = controls
 
 dpad = mouse_movement 
+=======
+dpad = mouse_movement
+>>>>>>> 4ba83e4 (Updating gptk for stickless devices)
